@@ -13,6 +13,8 @@ url-to-skill analyzes a web service and generates a Claude skill that captures i
 
 ## How It Works
 
+![url-to-skill pipeline blueprint](./images/pipeline.png)
+
 ```
 URL → Deep Research → Classify → Generate Skill → Validate → Deliver
 ```
@@ -122,6 +124,37 @@ Then tell Claude:
 ```
 "Convert this service into a skill: https://example.com"
 ```
+
+## Recommended MCP Servers
+
+The pipeline runs on WebFetch + WebSearch alone, but two MCP servers lift output quality meaningfully:
+
+```mermaid
+flowchart LR
+    A["01 · Deep Research"] --> B["02 · Classify"] --> C["03 · Generate"] --> D["04 · Validate"] --> E["05 · Deliver"]
+    P["Playwright MCP<br/><i>mission-critical</i>"] -.-> A
+    P -.-> D
+    X["Context7 MCP<br/><i>quality multiplier</i>"] -.-> A
+    X -.-> B
+    classDef mcp fill:#2a1f14,stroke:#d78b3d,color:#ece1cb
+    classDef stage fill:#14100b,stroke:#6a5a42,color:#ece1cb
+    class P,X mcp
+    class A,B,C,D,E stage
+```
+
+**Playwright MCP** — crawls subpages, reads HTML structure, interaction flow, and form fields. Without it the pipeline falls back to WebFetch, and the gap is real.
+
+```bash
+claude mcp add playwright -- npx @anthropic-ai/mcp-playwright
+```
+
+**Context7 MCP** — pulls up-to-date library docs during research. Sharpens tech-stack reads and helps locate comparable services with precision.
+
+```bash
+claude mcp add context7 -- npx -y @upstash/context7-mcp
+```
+
+> Optional fallbacks: Chrome MCP, Defuddle — substitutes for Playwright when unavailable. Nice to have, not required.
 
 ## Requirements
 
