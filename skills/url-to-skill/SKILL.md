@@ -157,10 +157,25 @@ Before building anything, consult the user. Different products warrant different
 Use AskUserQuestion (or ask directly) to clarify:
 
 **1. Output format** — "What format would be most useful?"
-- **Interactive React artifact**: best for quizzes, calculators, scoring tools, dashboards — renders directly in Claude
-- **Standalone HTML file**: best to open in a browser, share, or host independently
-- **Conversational skill only**: best for content generators, analysis tools, advisory services
-- **Full package (skill + artifact)**: maximum flexibility
+
+The *primary* output of any generated skill is the conversational result Claude produces in the chat — markdown, tables, score breakdowns. That's what actually delivers the value, and it works identically in Claude Code, Claude.ai, and anywhere else. Visual files are an *optional shareable layer* on top, used when the user wants a report to send, save, or view in a browser.
+
+| Runtime | Primary (always) | Optional shareable layer |
+|---------|-----------------|-------------------------|
+| **Claude Code (terminal, IDE)** | Markdown in chat | HTML file on request ("리포트로 뽑아줘" / "공유용 만들어줘") |
+| **Claude.ai (web/desktop app)** | React artifact in chat | — artifact already serves as the visual |
+
+Options to offer the user:
+- **Conversational (markdown) only** — cleanest for advisory/content/analysis skills. Fastest to iterate on. Default when visual presentation isn't core to the value.
+- **Markdown + HTML (opt-in)** — Claude Code pattern. Markdown by default; HTML report file generated only when the user explicitly asks. Best for shareable outputs (critiques, scorecards, reports).
+- **React artifact** — Claude.ai pattern. The artifact is the visual presentation.
+- **All three (markdown + HTML + React)** — maximum portability across environments. Recommended when the user wants the skill to work cleanly in both Claude Code and Claude.ai.
+
+If the user doesn't specify, pick based on the product type:
+- Content/analysis/advisory tool → **Conversational (markdown) only**
+- Visual scorecard/report/critique → **Markdown + HTML (opt-in)**, add React if the user uses Claude.ai
+
+**Do not auto-generate HTML on every run.** HTML generation is an explicit user action — like exporting a PDF. Auto-generating creates noise files in the user's CWD.
 
 **2. Depth of replication** — "How closely should this match the original?"
 - **Core functionality only**: fast, focused on the main value proposition
@@ -204,12 +219,14 @@ generated-skill-name/
 ├── references/           # When complex models or templates exist
 │   ├── scoring-model.md  # Scoring criteria, evaluation rubrics
 │   └── templates.md      # Output templates
-└── assets/               # When artifacts are needed
-    ├── Component.jsx     # Interactive React artifact
-    └── tool.html         # Standalone HTML tool
+└── assets/               # When visual outputs are needed
+    ├── tool-template.html  # Claude Code path — default, always include if visual output matters
+    └── Component.jsx       # Claude.ai path — include when artifact interactivity adds value
 ```
 
-**No backend needed.** React .jsx artifacts render directly in Claude. Standalone .html files open in any browser. Keep everything client-side and stateless.
+**No backend needed.** Standalone `.html` files open in any browser (Claude Code default). React `.jsx` artifacts render directly in Claude.ai. Keep everything client-side and stateless.
+
+Prefer generating **both** whenever the tool is visual. It's slightly more work up front but it's the only way the generated skill works for users regardless of which client they run it in — and the two files share the same scoring logic, copy, and structure, so the duplication is shallow.
 
 ### 3-3. Naming Convention
 
@@ -300,34 +317,77 @@ For [specific task], use the best available tool:
 3. **Otherwise**: [baseline approach that always works]
 ```
 
-### 4-3. Interactive React/HTML Artifacts
+### 4-3. Visual Outputs — HTML and React Artifacts (Optional Layer)
 
-When the product is interactive, create a production-quality React component or standalone HTML.
+The generated skill's *primary* output is always the conversational markdown Claude writes in chat. Visual files (HTML, React artifacts) are an **opt-in shareable layer** — produced only when the user explicitly asks for a shareable report, a visual version, or something they can send. Never auto-generate visual files on every run; they leak noise into the user's CWD.
 
-**React (.jsx) rules:**
-- Single file with default export
-- Tailwind CSS utility classes only (no custom CSS build needed)
-- State management via React hooks (useState, useReducer)
-- No localStorage — all data in memory
+When the user does ask for a visual, route by runtime.
+
+#### Environment routing (bake this into the generated skill)
+
+The generated skill's SKILL.md must have a "Render Visual Report (Optional)" step:
+
+| Runtime | When user requests a visual | Output |
+|---------|----------------------------|--------|
+| **Claude Code (terminal/IDE)** | "리포트로 만들어줘", "shareable version", "HTML로 뽑아줘" | HTML file written to CWD |
+| **Claude.ai (web/desktop)** | Same triggers — or user implicitly expects an artifact | React `.jsx` artifact inline |
+
+Triggers that mean "generate the visual" (the generated skill should watch for these):
+- "리포트로 / 파일로 / HTML로 만들어줘"
+- "shareable version", "visual report", "export as file"
+- "동료한테 보낼 수 있게"
+- User explicitly mentions artifact / canvas
+
+If the user just asks for feedback/analysis without mentioning a file or visual, stop at the markdown output. Don't generate HTML.
+
+When generating the HTML (Claude Code path), the step should:
+1. Read the HTML template from `assets/<tool>-template.html`
+2. Substitute real values for `{{PLACEHOLDERS}}`
+3. Write to user's CWD as `<skill-name>-<subject-slug>-<YYYY-MM-DD>.html`
+4. Tell the user the file path and suggest `open <file>` / `xdg-open <file>` / `start <file>` — do not auto-open (remote shells break)
+
+#### HTML file rules (Claude Code path)
+
+- Single self-contained file: `assets/<tool>-template.html` with `{{PLACEHOLDER}}` tokens the generated skill substitutes per run
+- Tailwind via CDN (`<script src="https://cdn.tailwindcss.com"></script>`) — zero build step, no bundler
+- Document every placeholder in a top-of-file HTML comment: name, type, allowed values
+- Use HTML comments (`<!-- === SECTION === -->`) to mark repeatable blocks so the skill can duplicate them for dynamic lists
+- Mobile viewport meta tag always present
+- Vanilla JS only if needed (most critiques/scorecards need none — just baked-in content)
+- Korean/CJK support: include a web-safe font stack with `"Noto Sans KR"` fallback
+
+#### React `.jsx` rules (Claude.ai path)
+
+- Single file with default export at `assets/<Component>.jsx`
+- Tailwind CSS utility classes only (no custom CSS build)
+- State via hooks (useState, useReducer) — no localStorage, all in-memory
 - Available libraries: recharts, lucide-react, d3, lodash, three.js, papaparse, shadcn/ui, chart.js, tone
-- Mobile responsive (mobile-first approach)
+- Mobile responsive (mobile-first)
 
-**Quality expectations — match a finished product, not a prototype:**
+#### Single source of truth
+
+Whenever both formats exist, the scoring weights, section labels, copy, and result thresholds must match between HTML and JSX. Put the business logic (scoring rubric, threshold tables, section definitions) in `references/scoring-model.md` and have both outputs implement the same rules. Diverging logic is a bug.
+
+#### Quality expectations — match a finished product, not a prototype
+
+Applies to both paths:
 - Clean visual hierarchy and professional typography
-- Smooth transitions and micro-interactions where appropriate
 - Accessible: keyboard navigation, sufficient contrast, ARIA labels, semantic HTML
 - Error states and empty states handled gracefully
 - Results presentation with charts/scores/breakdowns where relevant
 - Export/download functionality where it makes sense
+- Smooth transitions and micro-interactions where appropriate (React path has more room for this)
 
-**Implementation priorities (in order):**
+#### Implementation priorities (in order)
+
 1. Core interaction logic (scoring, calculation, analysis) — must be faithful to the original
 2. Visual design — polished, intentional, modern
 3. Results presentation — clear, actionable
 4. Accessibility — keyboard nav, contrast, screen reader friendly
-5. Micro-interactions — smooth transitions, loading states
+5. Micro-interactions — smooth transitions, loading states (React path)
 
-**Performance checklist for artifacts:**
+#### Performance checklist (React)
+
 - No unnecessary re-renders (use `memo`, `useCallback` where appropriate)
 - Large lists virtualized if > 100 items
 - Images optimized or SVG-based
@@ -355,6 +415,7 @@ This separation keeps the SKILL.md readable while allowing deep-dive reference w
 | Artifact renders | If artifact exists: mentally walk through a real scenario — does it work? |
 | Scoring faithful | If scoring: criteria match or improve on original |
 | Tool fallback embedded | Generated skill has its own cascading fallback logic |
+| Environment-appropriate output | Markdown is always the primary output. Visual files are opt-in and environment-aware: if the skill ships only a `.jsx`, Claude Code users can't get a shareable version — ship an HTML path too, or make the markdown output self-sufficient. |
 | No trademark use | Skill name and content use functional names only |
 
 ---
