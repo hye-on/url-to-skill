@@ -244,7 +244,7 @@ flowchart LR
 **Playwright MCP** — crawls subpages, reads HTML structure, interaction flow, and form fields. Without it the pipeline falls back to WebFetch, and the gap is real.
 
 ```bash
-claude mcp add playwright -- npx @anthropic-ai/mcp-playwright
+claude mcp add playwright — npx -y @playwright/mcp@latest
 ```
 
 **Context7 MCP** — pulls up-to-date library docs during research. Sharpens tech-stack reads and helps locate comparable services with precision.
